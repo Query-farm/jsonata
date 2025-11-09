@@ -1,0 +1,212 @@
+# name: test/sql/jsonata.test
+# description: test jsonata extension
+# group: [sql]
+
+# Before we load the extension, this will fail
+statement error
+SELECT jsonata('Sam');
+----
+Catalog Error: Scalar Function with name jsonata does not exist!
+
+# Require statement will ensure this test is run with this extension loaded
+require jsonata
+
+require json
+
+# Confirm the extension works
+query I
+SELECT jsonata('Account', {'Account': 5});
+----
+5
+
+query I
+SELECT jsonata('{
+  "name": FirstName & " " & Surname,
+  "mobile": Phone[type = "mobile"].number
+}', '{
+  "FirstName": "Fred",
+  "Surname": "Smith",
+  "Age": 28,
+  "Address": {
+    "Street": "Hursley Park",
+    "City": "Winchester",
+    "Postcode": "SO21 2JN"
+  },
+  "Phone": [
+    {
+      "type": "home",
+      "number": "0203 544 1234"
+    },
+    {
+      "type": "office",
+      "number": "01962 001234"
+    },
+    {
+      "type": "office",
+      "number": "01962 001235"
+    },
+    {
+      "type": "mobile",
+      "number": "077 7700 1234"
+    }
+  ],
+  "Email": [
+    {
+      "type": "office",
+      "address": [
+        "fred.smith@my-work.com",
+        "fsmith@my-work.com"
+      ]
+    },
+    {
+      "type": "home",
+      "address": [
+        "freddy@my-social.com",
+        "frederic.smith@very-serious.com"
+      ]
+    }
+  ],
+  "Other": {
+    "Over 18 ?": true,
+    "Misc": null,
+    "Alternative.Address": {
+      "Street": "Brick Lane",
+      "City": "London",
+      "Postcode": "E1 6RF"
+    }
+  }
+}');
+----
+{"mobile":"077 7700 1234","name":"Fred Smith"}
+
+query T
+select jsonata('**.properties ~> $keys()', '{
+  "$schema": "http://json-schema.org/draft-04/schema#",
+  "required": [
+    "Account"
+  ],
+  "type": "object",
+  "id": "file://input-schema.json",
+  "properties": {
+    "Account": {
+      "required": [
+        "Order"
+      ],
+      "type": "object",
+      "properties": {
+        "Customer": {
+          "required": [
+            "First Name",
+            "Surname"
+          ],
+          "type": "object",
+          "properties": {
+            "First Name": {
+              "type": "string"
+            },
+            "Surname": {
+              "type": "string"
+            }
+          }
+        },
+        "AccID": {
+          "type": "string"
+        },
+        "Order": {
+          "items": {
+            "required": [
+              "OrderID",
+              "Product"
+            ],
+            "type": "object",
+            "properties": {
+              "OrderID": {
+                "type": "string"
+              },
+              "Product": {
+                "items": {
+                  "required": [
+                    "ProductID",
+                    "Product Name",
+                    "Price",
+                    "Quantity"
+                  ],
+                  "type": "object",
+                  "properties": {
+                    "SKU": {
+                      "type": "string"
+                    },
+                    "Description": {
+                      "type": "object",
+                      "properties": {
+                        "Width": {
+                          "type": "integer"
+                        },
+                        "Depth": {
+                          "type": "integer"
+                        },
+                        "Weight": {
+                          "type": "number"
+                        },
+                        "Colour": {
+                          "type": "string"
+                        },
+                        "Material": {
+                          "type": "string"
+                        },
+                        "Height": {
+                          "type": "integer"
+                        }
+                      }
+                    },
+                    "Product Name": {
+                      "type": "string"
+                    },
+                    "Price": {
+                      "type": "number"
+                    },
+                    "Quantity": {
+                      "type": "integer"
+                    },
+                    "ProductID": {
+                      "type": "integer"
+                    }
+                  }
+                },
+                "type": "array"
+              }
+            }
+          },
+          "type": "array"
+        },
+        "Account Name": {
+          "type": "string"
+        },
+        "Address": {
+          "required": [
+            "Address Line 1",
+            "City",
+            "Postcode"
+          ],
+          "type": "object",
+          "properties": {
+            "Address Line 1": {
+              "type": "string"
+            },
+            "Address Line 2": {
+              "type": "string"
+            },
+            "Postcode": {
+              "type": "string"
+            },
+            "City": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    }
+  }
+}')
+----
+["AccID","Account","Account Name","Address","Address Line 1","Address Line 2","City","Colour","Customer","Depth","Description","First Name","Height","Material","Order","OrderID","Postcode","Price","Product","Product Name","ProductID","Quantity","SKU","Surname","Weight","Width"]

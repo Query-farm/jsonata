@@ -1,10 +1,11 @@
 {
         "dependencies": [
-                "openssl"
+                "jsonata"
         ],
         "vcpkg-configuration": {
                 "overlay-ports": [
-                        "./extension-ci-tools/vcpkg_ports"
+                        "./extension-ci-tools/vcpkg_ports",
+                        "./vcpkg-overlay/jsonata"
                 ],
                 "overlay-triplets": [
                         "./extension-ci-tools/toolchains"
