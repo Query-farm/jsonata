@@ -210,3 +210,236 @@ select jsonata('**.properties ~> $keys()', '{
 }')
 ----
 ["AccID","Account","Account Name","Address","Address Line 1","Address Line 2","City","Colour","Customer","Depth","Description","First Name","Height","Material","Order","OrderID","Postcode","Price","Product","Product Name","ProductID","Quantity","SKU","Surname","Weight","Width"]
+
+# ============================================
+# NULL input tests
+# ============================================
+
+# NULL expression returns NULL
+query I
+SELECT jsonata(NULL, '{"a": 1}');
+----
+NULL
+
+# NULL JSON data returns NULL
+query I
+SELECT jsonata('a', NULL);
+----
+NULL
+
+# Both NULL returns NULL
+query I
+SELECT jsonata(NULL, NULL);
+----
+NULL
+
+# ============================================
+# Error case tests
+# ============================================
+
+# Invalid JSONata expression (syntax error)
+statement error
+SELECT jsonata('$sum(', '{"a": 1}');
+----
+Invalid JSONata expression
+
+# Invalid JSON data (DuckDB's JSON type validates before our function)
+statement error
+SELECT jsonata('a', 'not valid json');
+----
+Malformed JSON
+
+# Invalid JSON data (truncated)
+statement error
+SELECT jsonata('a', '{"a":');
+----
+Malformed JSON
+
+# ============================================
+# Non-constant expression path tests
+# ============================================
+
+# Expression from a column (forces non-constant path)
+query I
+SELECT jsonata(expr, data) FROM (VALUES ('a', '{"a": 1}'), ('b', '{"b": 2}')) AS t(expr, data);
+----
+1
+2
+
+# Expression from column with multiple rows
+query I
+SELECT jsonata(expr, '{"x": 10, "y": 20}') FROM (VALUES ('x'), ('y')) AS t(expr);
+----
+10
+20
+
+# Mixed expressions accessing nested data
+query I
+SELECT jsonata(expr, '{"user": {"name": "Alice", "age": 30}}') FROM (VALUES ('user.name'), ('user.age')) AS t(expr);
+----
+"Alice"
+30
+
+# ============================================
+# Edge case tests
+# ============================================
+
+# Empty JSON object
+query I
+SELECT jsonata('$', '{}');
+----
+{}
+
+# Empty JSON array
+query I
+SELECT jsonata('$', '[]');
+----
+[]
+
+# Expression that returns nothing (undefined becomes null in output)
+query I
+SELECT jsonata('nonexistent', '{"a": 1}');
+----
+null
+
+# Expression returning array
+query I
+SELECT jsonata('items', '{"items": [1, 2, 3]}');
+----
+[1,2,3]
+
+# Expression returning boolean
+query I
+SELECT jsonata('active', '{"active": true}');
+----
+true
+
+# Expression returning number
+query I
+SELECT jsonata('count', '{"count": 42}');
+----
+42
+
+# Expression returning string
+query I
+SELECT jsonata('name', '{"name": "test"}');
+----
+"test"
+
+# Expression with computation
+query I
+SELECT jsonata('$sum(values)', '{"values": [1, 2, 3, 4, 5]}');
+----
+15
+
+# Expression filtering array
+query I
+SELECT jsonata('items[value > 2]', '{"items": [{"value": 1}, {"value": 3}, {"value": 5}]}');
+----
+[{"value":3},{"value":5}]
+
+# Deeply nested access
+query I
+SELECT jsonata('a.b.c.d', '{"a": {"b": {"c": {"d": "deep"}}}}');
+----
+"deep"
+
+# ============================================
+# Constant expression optimization test
+# ============================================
+
+# Same expression applied to multiple rows (uses constant optimization)
+query I
+SELECT jsonata('value', data) FROM (VALUES ('{"value": 1}'), ('{"value": 2}'), ('{"value": 3}')) AS t(data);
+----
+1
+2
+3
+
+# ============================================
+# Bindings parameter tests (3-argument form)
+# ============================================
+
+# Simple variable binding
+query I
+SELECT jsonata('$name', '{}', '{"name": "Alice"}');
+----
+"Alice"
+
+# Multiple bindings
+query I
+SELECT jsonata('$x + $y', '{}', '{"x": 10, "y": 20}');
+----
+30
+
+# Binding used in filter expression
+query I
+SELECT jsonata('items[price > $threshold]', '{"items": [{"price": 50}, {"price": 150}, {"price": 200}]}', '{"threshold": 100}');
+----
+[{"price":150},{"price":200}]
+
+# Binding with data access combined
+query I
+SELECT jsonata('name & " is " & $status', '{"name": "Order"}', '{"status": "complete"}');
+----
+"Order is complete"
+
+# Binding with array value
+query I
+SELECT jsonata('$count($items)', '{}', '{"items": ["a", "b", "c"]}');
+----
+3
+
+# Binding with nested object
+query I
+SELECT jsonata('$config.timeout', '{}', '{"config": {"timeout": 5000, "retries": 3}}');
+----
+5000
+
+# Binding overrides data
+query I
+SELECT jsonata('$x', '{"x": 1}', '{"x": 99}');
+----
+99
+
+# Empty bindings object (should work like 2-arg version)
+query I
+SELECT jsonata('value', '{"value": 42}', '{}');
+----
+42
+
+# Bindings with computation in expression
+query I
+SELECT jsonata('$base * $multiplier', '{}', '{"base": 10, "multiplier": 5}');
+----
+50
+
+# NULL bindings returns NULL
+query I
+SELECT jsonata('$x', '{}', NULL);
+----
+NULL
+
+# Bindings from column (non-constant path)
+query I
+SELECT jsonata('$greeting', '{}', bindings) FROM (VALUES ('{"greeting": "Hello"}'), ('{"greeting": "World"}')) AS t(bindings);
+----
+"Hello"
+"World"
+
+# All three parameters from columns
+query I
+SELECT jsonata(expr, data, bindings)
+FROM (VALUES
+    ('$x + value', '{"value": 1}', '{"x": 10}'),
+    ('$x * value', '{"value": 2}', '{"x": 5}')
+) AS t(expr, data, bindings);
+----
+11
+10
+
+# Error: bindings must be an object
+statement error
+SELECT jsonata('$x', '{}', '[1, 2, 3]');
+----
+Bindings must be a JSON object

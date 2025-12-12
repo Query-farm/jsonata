@@ -85,17 +85,72 @@ SELECT jsonata('{
 └────────────────────────────────────────────────┘
 ```
 
-## Function
+## Functions
 
 ### `jsonata(expression, json_data)`
 
-The JSONata extension provides a single scalar function that evaluates a JSONata expression against JSON data.
+Evaluates a JSONata expression against JSON data.
 
 **Parameters:**
 - `expression` (VARCHAR): The JSONata expression to evaluate
 - `json_data` (JSON): The JSON data to query/transform
 
 **Returns:** JSON
+
+### `jsonata(expression, json_data, bindings)`
+
+Evaluates a JSONata expression against JSON data with external variable bindings.
+
+**Parameters:**
+- `expression` (VARCHAR): The JSONata expression to evaluate
+- `json_data` (JSON): The JSON data to query/transform
+- `bindings` (JSON): A JSON object where keys become variable names accessible in the expression using `$variable_name` syntax
+
+**Returns:** JSON
+
+**Bindings Example:**
+
+```sql
+-- Simple variable binding
+SELECT jsonata('$x + $y', '{}', '{"x": 10, "y": 20}') as result;
+┌────────┐
+│ result │
+│  json  │
+├────────┤
+│ 30     │
+└────────┘
+
+-- Use bindings for dynamic filtering
+SELECT jsonata(
+  'items[price > $threshold]',
+  '{"items": [{"price": 50}, {"price": 150}, {"price": 200}]}',
+  '{"threshold": 100}'
+) as expensive_items;
+┌─────────────────────────────────┐
+│         expensive_items         │
+│              json               │
+├─────────────────────────────────┤
+│ [{"price":150},{"price":200}]   │
+└─────────────────────────────────┘
+
+-- Combine data access with bindings
+SELECT jsonata(
+  'name & " - " & $status',
+  '{"name": "Order #123"}',
+  '{"status": "shipped"}'
+) as message;
+┌─────────────────────────┐
+│         message         │
+│          json           │
+├─────────────────────────┤
+│ "Order #123 - shipped"  │
+└─────────────────────────┘
+```
+
+Bindings are useful for:
+- Passing parameters into JSONata expressions without modifying the expression string
+- Dynamic filtering with thresholds or values from other columns
+- Separating configuration from data transformation logic
 
 **Examples:**
 
@@ -234,6 +289,31 @@ SELECT jsonata(
 Use the descendant wildcard operator (`**`) to traverse all levels of a nested structure and extract all property keys.
 
 ## Practical Examples
+
+### Using Bindings with Table Data
+
+```sql
+-- Use column values as bindings for dynamic filtering
+CREATE TABLE products (
+  category VARCHAR,
+  inventory JSON,
+  min_quantity INTEGER
+);
+
+INSERT INTO products VALUES
+  ('electronics', '{"items": [{"name": "Phone", "qty": 5}, {"name": "Laptop", "qty": 12}]}', 10),
+  ('clothing', '{"items": [{"name": "Shirt", "qty": 25}, {"name": "Pants", "qty": 8}]}', 15);
+
+-- Filter items based on per-row threshold from min_quantity column
+SELECT
+  category,
+  jsonata(
+    'items[qty >= $min].name',
+    inventory,
+    json_object('min', min_quantity)
+  ) as items_in_stock
+FROM products;
+```
 
 ### Extract Data from API Responses
 
