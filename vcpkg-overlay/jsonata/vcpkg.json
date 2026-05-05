@@ -1,6 +1,6 @@
 {
   "name": "jsonata",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "A C++ implementation of JSONata.",
   "homepage": "https://github.com/rayokota/jsonata-cpp",
   "license": "APACHE-2.0",
