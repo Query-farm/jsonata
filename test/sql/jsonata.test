@@ -443,3 +443,153 @@ statement error
 SELECT jsonata('$x', '{}', '[1, 2, 3]');
 ----
 Bindings must be a JSON object
+
+# ============================================
+# Regression: error-path / exception-handling tests
+# ============================================
+
+# Bindings as JSON string — must error cleanly, not be re-wrapped
+statement error
+SELECT jsonata('$x', '{}', '"a string"');
+----
+Bindings must be a JSON object
+
+# Bindings as JSON number
+statement error
+SELECT jsonata('$x', '{}', '42');
+----
+Bindings must be a JSON object
+
+# Bindings as JSON boolean
+statement error
+SELECT jsonata('$x', '{}', 'true');
+----
+Bindings must be a JSON object
+
+# Bindings as JSON null literal (distinct from SQL NULL)
+statement error
+SELECT jsonata('$x', '{}', 'null');
+----
+Bindings must be a JSON object
+
+# Bindings error from a column (exercises non-constant-bindings path)
+statement error
+SELECT jsonata('$x', '{}', bindings)
+FROM (VALUES ('{"x": 1}'), ('[1,2,3]')) AS t(bindings);
+----
+Bindings must be a JSON object
+
+# Bindings error with expression also from a column (exercises ternary path)
+statement error
+SELECT jsonata(expr, '{}', bindings)
+FROM (VALUES ('$x', '"not an object"')) AS t(expr, bindings);
+----
+Bindings must be a JSON object
+
+# Empty expression must surface as InvalidInputException, not crash
+statement error
+SELECT jsonata('', '{"a": 1}');
+----
+Invalid JSONata expression
+
+# Invalid expression on a row in a column (exercises non-constant-expr path)
+statement error
+SELECT jsonata(expr, '{"a": 1}')
+FROM (VALUES ('a'), ('$sum(')) AS t(expr);
+----
+Invalid JSONata expression
+
+# ============================================
+# Regression: NULL propagation across paths
+# ============================================
+
+# Constant expression with NULL rows mixed into data column
+query I
+SELECT jsonata('a', data)
+FROM (VALUES ('{"a": 1}'), (NULL), ('{"a": 3}')) AS t(data);
+----
+1
+NULL
+3
+
+# NULL bindings with valid data and constant expression
+query I
+SELECT jsonata('$x', data, bindings)
+FROM (VALUES ('{}', '{"x": 1}'), ('{}', NULL), ('{}', '{"x": 3}')) AS t(data, bindings);
+----
+1
+NULL
+3
+
+# NULL data with valid bindings and constant expression
+query I
+SELECT jsonata('$x', data, '{"x": 7}')
+FROM (VALUES ('{}'), (NULL), ('{}')) AS t(data);
+----
+7
+NULL
+7
+
+# ============================================
+# Regression: dump() / unicode round-trip
+# ============================================
+
+# Unicode strings in data must round-trip through nlohmann dump()
+query I
+SELECT jsonata('greeting', '{"greeting": "héllo wörld 🌍"}');
+----
+"héllo wörld 🌍"
+
+# Unicode keys in bindings
+query I
+SELECT jsonata('$café', '{}', '{"café": "espresso"}');
+----
+"espresso"
+
+# ============================================
+# Regression: bindings value-type variety
+# ============================================
+
+# Binding with object value, then access nested field
+query I
+SELECT jsonata('$user.email', '{}', '{"user": {"email": "a@b.com"}}');
+----
+"a@b.com"
+
+# Binding with null value
+query I
+SELECT jsonata('$x', '{}', '{"x": null}');
+----
+null
+
+# Binding with boolean value
+query I
+SELECT jsonata('$flag', '{}', '{"flag": true}');
+----
+true
+
+# Binding with negative / decimal numbers
+query I
+SELECT jsonata('$a + $b', '{}', '{"a": -1.5, "b": 2.5}');
+----
+1
+
+# ============================================
+# Regression: multi-chunk / parallel execution
+# ============================================
+
+# Constant expression reused across many rows (>2048, multiple chunks per thread).
+# Catches state leakage between rows when the same Jsonata instance is reused.
+query II
+SELECT count(*), sum(CAST(jsonata('value', json_object('value', i)) AS INTEGER))
+FROM range(0, 5000) t(i);
+----
+5000	12497500
+
+# Same, but with bindings — frame is rebuilt every row, so this verifies
+# createFrame() / evaluate() don't leak prior-row bindings into later rows.
+query II
+SELECT count(*), sum(CAST(jsonata('$x', '{}', json_object('x', i)) AS INTEGER))
+FROM range(0, 5000) t(i);
+----
+5000	12497500
