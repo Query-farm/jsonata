@@ -5,6 +5,7 @@
 #include "duckdb/common/exception.hpp"
 #include "duckdb/common/vector_operations/ternary_executor.hpp"
 #include "duckdb/function/scalar_function.hpp"
+#include "duckdb/main/extension_helper.hpp"
 #include <duckdb/parser/parsed_data/create_scalar_function_info.hpp>
 
 #include <jsonata/Jsonata.h>
@@ -16,16 +17,24 @@ namespace duckdb {
 static std::unique_ptr<jsonata::Jsonata> ParseJsonataExpression(const string &expr_str) {
 	try {
 		return make_uniq<jsonata::Jsonata>(expr_str);
+	} catch (const Exception &) {
+		throw;
 	} catch (const std::exception &e) {
 		throw InvalidInputException("Invalid JSONata expression: %s", e.what());
+	} catch (...) {
+		throw InvalidInputException("Invalid JSONata expression: unknown error");
 	}
 }
 
 static nlohmann::json ParseJsonData(string_t data) {
 	try {
 		return nlohmann::json::parse(data.GetData(), data.GetData() + data.GetSize());
-	} catch (const nlohmann::json::parse_error &e) {
+	} catch (const Exception &) {
+		throw;
+	} catch (const std::exception &e) {
 		throw InvalidInputException("Invalid JSON data: %s", e.what());
+	} catch (...) {
+		throw InvalidInputException("Invalid JSON data: unknown error");
 	}
 }
 
@@ -39,26 +48,32 @@ static void BindJsonToFrame(std::shared_ptr<jsonata::Frame> frame, const nlohman
 }
 
 static string_t EvaluateJsonata(jsonata::Jsonata &expr, const nlohmann::json &data, Vector &result) {
-	nlohmann::json output;
 	try {
-		output = expr.evaluate(data);
+		auto output = expr.evaluate(data);
+		return StringVector::AddString(result, output.dump());
+	} catch (const Exception &) {
+		throw;
 	} catch (const std::exception &e) {
 		throw InvalidInputException("JSONata evaluation error: %s", e.what());
+	} catch (...) {
+		throw InvalidInputException("JSONata evaluation error: unknown error");
 	}
-	return StringVector::AddString(result, output.dump());
 }
 
 static string_t EvaluateJsonataWithBindings(jsonata::Jsonata &expr, const nlohmann::json &data,
                                             const nlohmann::json &bindings, Vector &result) {
-	nlohmann::json output;
 	try {
 		auto frame = expr.createFrame();
 		BindJsonToFrame(frame, bindings);
-		output = expr.evaluate(data, frame);
+		auto output = expr.evaluate(data, frame);
+		return StringVector::AddString(result, output.dump());
+	} catch (const Exception &) {
+		throw;
 	} catch (const std::exception &e) {
 		throw InvalidInputException("JSONata evaluation error: %s", e.what());
+	} catch (...) {
+		throw InvalidInputException("JSONata evaluation error: unknown error");
 	}
-	return StringVector::AddString(result, output.dump());
 }
 
 inline void JsonataScalarFun(DataChunk &args, ExpressionState &state, Vector &result) {
@@ -72,6 +87,8 @@ inline void JsonataScalarFun(DataChunk &args, ExpressionState &state, Vector &re
 			return;
 		}
 		auto jsonata_str = ConstantVector::GetData<string_t>(jsonata_vector)[0];
+		// jsonata::Jsonata uses thread_local state and is not safe to share
+		// across threads — keep this instance scoped to this chunk-call only.
 		auto jsonata_expr = ParseJsonataExpression(jsonata_str.GetString());
 
 		UnaryExecutor::Execute<string_t, string_t>(data_vector, result, args.size(), [&](string_t data) {
@@ -121,6 +138,11 @@ inline void JsonataScalarFunWithBindings(DataChunk &args, ExpressionState &state
 }
 
 static void LoadInternal(ExtensionLoader &loader) {
+	// Best-effort: prefer json's stricter VARCHAR->JSON cast for input validation.
+	// Our function still works without it (LogicalType::JSON() is a VARCHAR alias
+	// and we parse via nlohmann), so don't fail extension load if autoload is off.
+	ExtensionHelper::TryAutoLoadExtension(loader.GetDatabaseInstance(), "json");
+
 	ScalarFunctionSet jsonata_function_set("jsonata");
 
 	// 2-argument version: jsonata(expression, json_data)
@@ -166,7 +188,7 @@ static void LoadInternal(ExtensionLoader &loader) {
 
 	loader.RegisterFunction(info);
 
-	QueryFarmSendTelemetry(loader, "jsonata", "2025121201");
+	QueryFarmSendTelemetry(loader, "jsonata", "2026050501");
 }
 
 void JsonataExtension::Load(ExtensionLoader &loader) {
@@ -177,7 +199,7 @@ std::string JsonataExtension::Name() {
 }
 
 std::string JsonataExtension::Version() const {
-	return "2025121201";
+	return "2026050501";
 }
 
 } // namespace duckdb
