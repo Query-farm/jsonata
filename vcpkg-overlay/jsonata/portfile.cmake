@@ -4,8 +4,8 @@ vcpkg_check_linkage(ONLY_STATIC_LIBRARY)
 vcpkg_from_github(
     OUT_SOURCE_PATH SOURCE_PATH
     REPO rayokota/jsonata-cpp
-    REF v0.1.2
-    SHA512 1ce5e905652baac7b73d8d2a8f5be070ebc669a44153c1651f1ac97026c81f5dddeff6db275564abfdb442bfe324cf64d0f7bca16ba5508051fd45d381c46f63
+    REF v0.1.3
+    SHA512 6aad513bb2bae13659b8b7eb5175f445fce3a55872edd41bced2d6e647591b1c20d7a85885bf1c6260897d90394b5b251975f20958c74bbdbcfc597a2277bd10
 )
 
 vcpkg_cmake_configure(

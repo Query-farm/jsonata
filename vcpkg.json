@@ -8,6 +8,7 @@
                         "./vcpkg-overlay/jsonata"
                 ],
                 "overlay-triplets": [
+                        "./vcpkg-triplets",
                         "./extension-ci-tools/toolchains"
                 ]
         }
