@@ -91,13 +91,13 @@ inline void JsonataScalarFun(DataChunk &args, ExpressionState &state, Vector &re
 		// across threads — keep this instance scoped to this chunk-call only.
 		auto jsonata_expr = ParseJsonataExpression(jsonata_str.GetString());
 
-		UnaryExecutor::Execute<string_t, string_t>(data_vector, result, args.size(), [&](string_t data) {
+		UnaryExecutor::Execute<string_t, string_t>(data_vector, result, [&](string_t data) {
 			auto parsed = ParseJsonData(data);
 			return EvaluateJsonata(*jsonata_expr, parsed, result);
 		});
 	} else {
 		BinaryExecutor::Execute<string_t, string_t, string_t>(
-		    jsonata_vector, data_vector, result, args.size(), [&](string_t jsonata_str, string_t data) {
+		    jsonata_vector, data_vector, result, [&](string_t jsonata_str, string_t data) {
 			    auto jsonata_expr = ParseJsonataExpression(string(jsonata_str.GetData(), jsonata_str.GetSize()));
 			    auto parsed = ParseJsonData(data);
 			    return EvaluateJsonata(*jsonata_expr, parsed, result);
@@ -120,14 +120,14 @@ inline void JsonataScalarFunWithBindings(DataChunk &args, ExpressionState &state
 		auto jsonata_expr = ParseJsonataExpression(jsonata_str.GetString());
 
 		BinaryExecutor::Execute<string_t, string_t, string_t>(
-		    data_vector, bindings_vector, result, args.size(), [&](string_t data, string_t bindings) {
+		    data_vector, bindings_vector, result, [&](string_t data, string_t bindings) {
 			    auto parsed = ParseJsonData(data);
 			    auto parsed_bindings = ParseJsonData(bindings);
 			    return EvaluateJsonataWithBindings(*jsonata_expr, parsed, parsed_bindings, result);
 		    });
 	} else {
 		TernaryExecutor::Execute<string_t, string_t, string_t, string_t>(
-		    jsonata_vector, data_vector, bindings_vector, result, args.size(),
+		    jsonata_vector, data_vector, bindings_vector, result,
 		    [&](string_t jsonata_str, string_t data, string_t bindings) {
 			    auto jsonata_expr = ParseJsonataExpression(string(jsonata_str.GetData(), jsonata_str.GetSize()));
 			    auto parsed = ParseJsonData(data);
@@ -154,6 +154,8 @@ static void LoadInternal(ExtensionLoader &loader) {
 	auto jsonata_with_bindings = ScalarFunction({LogicalType::VARCHAR, LogicalType::JSON(), LogicalType::JSON()},
 	                                            LogicalType::JSON(), JsonataScalarFunWithBindings);
 	jsonata_function_set.AddFunction(jsonata_with_bindings);
+	// Both overloads raise errors for invalid expressions, JSON data or bindings.
+	jsonata_function_set.SetFallible();
 
 	CreateScalarFunctionInfo info(jsonata_function_set);
 	info.descriptions.push_back({
