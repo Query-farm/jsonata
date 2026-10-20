@@ -188,7 +188,7 @@ static void LoadInternal(ExtensionLoader &loader) {
 
 	loader.RegisterFunction(info);
 
-	QueryFarmSendTelemetry(loader, "jsonata", "2026072501");
+	QueryFarmSendTelemetry(loader, "jsonata", "2026102001");
 }
 
 void JsonataExtension::Load(ExtensionLoader &loader) {
@@ -199,7 +199,7 @@ std::string JsonataExtension::Name() {
 }
 
 std::string JsonataExtension::Version() const {
-	return "2026072501";
+	return "2026102001";
 }
 
 } // namespace duckdb
