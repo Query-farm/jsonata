@@ -6,7 +6,7 @@ namespace duckdb {
 
 class JsonataExtension : public Extension {
 public:
-	void Load(ExtensionLoader &db) override;
+	void Load(ExtensionLoader &loader) override;
 	std::string Name() override;
 	std::string Version() const override;
 };
