@@ -14,6 +14,11 @@
 
 namespace duckdb {
 
+//! A positional-only parameter with a real name (bare types would be reported as col0, col1, ...)
+static FunctionParameter Positional(const char *name, LogicalType type) {
+	return FunctionParameter(name, std::move(type), {}, FunctionParameterKind::POSITIONAL_ONLY);
+}
+
 static std::unique_ptr<jsonata::Jsonata> ParseJsonataExpression(const string &expr_str) {
 	try {
 		return make_uniq<jsonata::Jsonata>(expr_str);
@@ -147,12 +152,15 @@ static void LoadInternal(ExtensionLoader &loader) {
 
 	// 2-argument version: jsonata(expression, json_data)
 	auto jsonata_scalar_function =
-	    ScalarFunction({LogicalType::VARCHAR, LogicalType::JSON()}, LogicalType::JSON(), JsonataScalarFun);
+	    ScalarFunction({Positional("expression", LogicalType::VARCHAR), Positional("json_data", LogicalType::JSON())},
+	                   LogicalType::JSON(), JsonataScalarFun);
 	jsonata_function_set.AddFunction(jsonata_scalar_function);
 
 	// 3-argument version: jsonata(expression, json_data, bindings)
-	auto jsonata_with_bindings = ScalarFunction({LogicalType::VARCHAR, LogicalType::JSON(), LogicalType::JSON()},
-	                                            LogicalType::JSON(), JsonataScalarFunWithBindings);
+	auto jsonata_with_bindings =
+	    ScalarFunction({Positional("expression", LogicalType::VARCHAR), Positional("json_data", LogicalType::JSON()),
+	                    Positional("bindings", LogicalType::JSON())},
+	                   LogicalType::JSON(), JsonataScalarFunWithBindings);
 	jsonata_function_set.AddFunction(jsonata_with_bindings);
 	// Both overloads raise errors for invalid expressions, JSON data or bindings.
 	jsonata_function_set.SetFallible();
@@ -190,7 +198,7 @@ static void LoadInternal(ExtensionLoader &loader) {
 
 	loader.RegisterFunction(info);
 
-	QueryFarmSendTelemetry(loader, "jsonata", "2026102001");
+	QueryFarmSendTelemetry(loader, "jsonata", "2026102101");
 }
 
 void JsonataExtension::Load(ExtensionLoader &loader) {
@@ -201,7 +209,7 @@ std::string JsonataExtension::Name() {
 }
 
 std::string JsonataExtension::Version() const {
-	return "2026102001";
+	return "2026102101";
 }
 
 } // namespace duckdb

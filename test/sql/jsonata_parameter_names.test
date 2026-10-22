@@ -1,0 +1,33 @@
+# name: test/sql/jsonata_parameter_names.test
+# description: every function parameter is reported with a real name, not col0, col1, ...
+# group: [sql]
+
+require jsonata
+
+require json
+
+query IIT
+SELECT function_name, function_type, parameters FROM duckdb_functions()
+WHERE extension_name = 'jsonata'
+ORDER BY function_name, function_type, len(parameters), parameter_types::VARCHAR;
+----
+jsonata	scalar	[expression, json_data]
+jsonata	scalar	[expression, json_data, bindings]
+
+# No parameter may fall back to a positional colN name
+query I
+SELECT count(*) FROM (SELECT unnest(parameters) AS p FROM duckdb_functions() WHERE extension_name = 'jsonata')
+WHERE regexp_matches(p, '^col[0-9]+$');
+----
+0
+
+# Positional calls work as before
+query I
+SELECT jsonata('Account', {'Account': 5});
+----
+5
+
+query I
+SELECT jsonata('$x + $y', '{}', '{"x": 10, "y": 20}');
+----
+30
