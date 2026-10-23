@@ -7,22 +7,15 @@
   </a>
 </p>
 
-# DuckDB JSONata Extension by Query.Farm
+# JSONata Extension for DuckDB
 
-[![DuckDB](https://img.shields.io/badge/DuckDB-community_extension-fdf1e0?logo=duckdb&logoColor=fff000)](https://duckdb.org/community_extensions/extensions/jsonata.html)
-[![v1.5 build](https://github.com/Query-farm/jsonata/actions/workflows/MainDistributionPipeline.yml/badge.svg?branch=v1.5)](https://github.com/Query-farm/jsonata/actions/workflows/MainDistributionPipeline.yml?query=branch%3Av1.5)
+[![DuckDB](https://img.shields.io/badge/DuckDB-extension-fdf1e0?logo=duckdb&logoColor=fff000)](https://query.farm/products/extensions/jsonata/)
+[![v2.0 build](https://github.com/Query-farm/jsonata/actions/workflows/MainDistributionPipeline.yml/badge.svg?branch=v2.0)](https://github.com/Query-farm/jsonata/actions/workflows/MainDistributionPipeline.yml?query=branch%3Av2.0)
 
-The **JSONata** extension, developed by **[Query.Farm](https://query.farm)**, brings the power of JSONata query and transformation language directly to your SQL queries in DuckDB. Transform, query, and manipulate JSON data with sophisticated expressions—all without leaving your database environment.
+Query and transform JSON in DuckDB using JSONata expressions.
 
 ## Documentation
 
 Full documentation, including installation, usage, the function reference, and cookbook examples, is available at:
 
-**[https://query.farm/products/extensions/jsonata](https://query.farm/products/extensions/jsonata)**
-
-## Installation
-
-```sql
-INSTALL jsonata FROM community;
-LOAD jsonata;
-```
+**[https://query.farm/products/extensions/jsonata/](https://query.farm/products/extensions/jsonata/)**
