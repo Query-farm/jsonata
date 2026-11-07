@@ -13,6 +13,7 @@ ORDER BY function_name, function_type, len(parameters), parameter_types::VARCHAR
 ----
 jsonata	scalar	[expression, json_data]
 jsonata	scalar	[expression, json_data, bindings]
+jsonata_validate	scalar	[expression]
 
 # No parameter may fall back to a positional colN name
 query I

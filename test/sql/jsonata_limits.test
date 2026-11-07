@@ -1,0 +1,167 @@
+# name: test/sql/jsonata_limits.test
+# description: runaway expressions, deep nesting and huge inputs end in errors, never in a crash or a hang
+# group: [sql]
+
+require jsonata
+
+require json
+
+# ============================================
+# Settings
+# ============================================
+
+query II
+SELECT current_setting('jsonata_timeout_ms'), current_setting('jsonata_max_depth');
+----
+10000	1000
+
+statement error
+SET jsonata_timeout_ms = -1;
+----
+must be >= 0
+
+statement error
+SET jsonata_max_depth = -5;
+----
+must be >= 0
+
+# ============================================
+# Recursion
+# ============================================
+
+# Non-terminating, non-tail recursion used to overflow the native stack (SIGSEGV)
+statement error
+SELECT jsonata('($f := function($x){1 + $f($x)}; $f(1))', '{}');
+----
+maximum evaluation depth of 1000
+
+# Same from a table column (non-constant expression path) with bindings
+statement error
+SELECT jsonata(e, '{}', '{"n": 1}') FROM (VALUES ('$n'), ('($f := function($x){1 + $f($x)}; $f($n))')) t(e);
+----
+maximum evaluation depth
+
+# Bounded recursion well within the default limit works
+query I
+SELECT jsonata('($f := function($n){$n <= 1 ? 1 : $n + $f($n - 1)}; $f(50))', '{}');
+----
+1275
+
+# A lower depth limit rejects it
+statement ok
+SET jsonata_max_depth = 50;
+
+statement error
+SELECT jsonata('($f := function($n){$n <= 1 ? 1 : $n + $f($n - 1)}; $f(50))', '{}');
+----
+maximum evaluation depth of 50
+
+# With the depth limit disabled the native stack guard still stops runaway recursion
+statement ok
+SET jsonata_max_depth = 0;
+
+statement error
+SELECT jsonata('($f := function($x){1 + $f($x)}; $f(1))', '{}');
+----
+nested too deeply for the available stack
+
+statement ok
+RESET jsonata_max_depth;
+
+# ============================================
+# Timeout
+# ============================================
+
+statement ok
+SET jsonata_timeout_ms = 100;
+
+# Tail-recursive infinite loop: the evaluator does not grow the stack, so only the timeout stops it
+statement error
+SELECT jsonata('($f := function($x){ $f($x) }; $f(1))', '{}');
+----
+timed out after 100 ms
+
+# A long-running but finite expression is stopped as well
+statement error
+SELECT jsonata('$sum([1..10000000].($ * 2))', '{}');
+----
+timed out after 100 ms
+
+# Evaluations are timed individually: many fast rows never trip the timeout
+query I
+SELECT sum(jsonata('a + 1', json_object('a', i))::BIGINT) FROM range(20000) t(i);
+----
+200010000
+
+statement ok
+RESET jsonata_timeout_ms;
+
+# ============================================
+# Deep nesting
+# ============================================
+
+# Deeply nested JSON data is rejected instead of overflowing the stack
+statement error
+SELECT jsonata('$', repeat('[', 100000) || repeat(']', 100000));
+----
+nested more than 1000 levels deep
+
+statement error
+SELECT jsonata('$x', '{}', '{"x": ' || repeat('{"a":', 5000) || '1' || repeat('}', 5000) || '}');
+----
+nested more than 1000 levels deep
+
+# Brackets inside strings do not count
+query I
+SELECT jsonata('$length(s)', json_object('s', repeat('[', 5000)));
+----
+5000
+
+# Moderately nested data is fine
+query I
+SELECT jsonata('$count(**)', repeat('{"a":', 500) || '1' || repeat('}', 500)) IS NOT NULL;
+----
+true
+
+# Deeply nested expressions are rejected instead of overflowing the parser
+statement error
+SELECT jsonata(repeat('(', 100000) || '1' || repeat(')', 100000), '{}');
+----
+the expression is nested too deeply
+
+query I
+SELECT jsonata(repeat('(', 100) || '1' || repeat(')', 100), '{}');
+----
+1
+
+# Long operator chains end in an error or a result, not a crash
+statement error
+SELECT jsonata(repeat('1 + ', 100000) || '1', '{}');
+----
+
+# ============================================
+# Huge inputs
+# ============================================
+
+query III
+SELECT jsonata('$count(x)', j), jsonata('$sum(x)', j), jsonata('$count($)', j2)
+FROM (SELECT to_json({'x': list(range)}) AS j, to_json(list(range)) AS j2 FROM range(100000));
+----
+100000	4999950000	100000
+
+query I
+SELECT length(jsonata('$', (SELECT to_json(list(repeat('x', 100))) FROM range(10000))));
+----
+1030001
+
+# ============================================
+# Internal guard bindings are not reachable from expressions
+# ============================================
+
+statement ok
+SELECT jsonata('$__evaluate_entry', '{}');
+
+query I
+SELECT jsonata('$x', '{}', '{"__evaluate_entry": 1, "x": 2}');
+----
+2

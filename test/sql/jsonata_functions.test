@@ -1,0 +1,227 @@
+# name: test/sql/jsonata_functions.test
+# description: function metadata, jsonata_validate, volatility and the per-thread expression cache
+# group: [sql]
+
+require jsonata
+
+require json
+
+# ============================================
+# Metadata: every overload documented with real parameter names
+# ============================================
+
+# Functions are matched by name since extension_name is NULL when the extension is linked statically
+query I
+SELECT count(*) FROM duckdb_functions() WHERE function_name IN ('jsonata', 'jsonata_validate');
+----
+3
+
+query IIII
+SELECT function_name, function_type, parameters, parameter_types
+FROM duckdb_functions()
+WHERE function_name IN ('jsonata', 'jsonata_validate')
+  AND (description IS NULL OR description = ''
+       OR examples IS NULL OR len(examples) = 0
+       OR categories IS NULL OR len(categories) = 0
+       OR len(parameters) <> len(parameter_types)
+       OR len(list_distinct(parameters)) <> len(parameters)
+       OR len(list_filter(parameters, lambda p: regexp_matches(p, '^(col[0-9]+|args|kwargs)$'))) > 0)
+ORDER BY ALL
+----
+
+query IIT
+SELECT function_name, parameters, categories
+FROM duckdb_functions()
+WHERE function_name IN ('jsonata', 'jsonata_validate')
+ORDER BY function_name, len(parameters);
+----
+jsonata	[expression, json_data]	[json]
+jsonata	[expression, json_data, bindings]	[json]
+jsonata_validate	[expression]	[json]
+
+query II
+SELECT name, input_type FROM duckdb_settings() WHERE name LIKE 'jsonata_%' ORDER BY name;
+----
+jsonata_max_depth	BIGINT
+jsonata_timeout_ms	BIGINT
+
+# ============================================
+# jsonata_validate
+# ============================================
+
+query IIIIII
+SELECT jsonata_validate('Account.Order[0].Product'),
+       jsonata_validate('$sum(Order.Product.Price)'),
+       jsonata_validate('$sum('),
+       jsonata_validate(''),
+       jsonata_validate('a[') ,
+       jsonata_validate(NULL);
+----
+true	true	false	false	false	NULL
+
+# Validation never evaluates: a runaway expression is still valid syntax
+query I
+SELECT jsonata_validate('($f := function($x){1 + $f($x)}; $f(1))');
+----
+true
+
+query I
+SELECT jsonata_validate(repeat('(', 100000) || '1' || repeat(')', 100000));
+----
+false
+
+query TT
+SELECT e, jsonata_validate(e)
+FROM (VALUES ('a.b'), ('"unterminated'), ('/regex'), ('a +'), ('{"a": 1}'), ('a ~> $uppercase()')) t(e)
+ORDER BY e;
+----
+"unterminated	false
+/regex	false
+a +	false
+a ~> $uppercase()	true
+a.b	true
+{"a": 1}	true
+
+# ============================================
+# Volatility: $random(), $now() and $millis() are evaluated per row
+# ============================================
+
+query I
+SELECT count(DISTINCT jsonata('$random()', '{}')) > 1 FROM range(100);
+----
+true
+
+query I
+SELECT count(DISTINCT jsonata('$random()', '{}', '{}')) > 1 FROM range(100);
+----
+true
+
+query I
+SELECT jsonata('$now()', '{}') LIKE '"20%';
+----
+true
+
+# Pure expressions still give the same answer everywhere
+query I
+SELECT count(DISTINCT jsonata('a * 2', '{"a": 21}')) FROM range(100);
+----
+1
+
+# ============================================
+# Expression cache: many distinct expressions in a column
+# ============================================
+
+# 50 distinct expressions (more than the per-thread cache holds) cycling over 3000 rows
+query I
+SELECT sum(jsonata('a + ' || (i % 50), '{"a": 1}')::BIGINT) FROM range(3000) t(i);
+----
+76500
+
+query I
+SELECT sum(jsonata('$x + ' || (i % 7), '{}', json_object('x', i))::BIGINT) FROM range(3000) t(i);
+----
+4507494
+
+# ============================================
+# Malformed input
+# ============================================
+
+# VARCHAR literals are cast to JSON (and validated) by the json extension first
+
+statement error
+SELECT jsonata('a', '{"a": 1');
+----
+Malformed JSON
+
+statement error
+SELECT jsonata('a', '{"a": 1}}');
+----
+Malformed JSON
+
+statement error
+SELECT jsonata('a', '');
+----
+Malformed JSON
+
+statement error
+SELECT jsonata('a', '{}', '{"x": ');
+----
+Malformed JSON
+
+statement error
+SELECT jsonata('a[', '{}');
+----
+Invalid JSONata expression
+
+statement error
+SELECT jsonata('"unterminated', '{}');
+----
+Invalid JSONata expression
+
+statement error
+SELECT jsonata('$undefinedFunction()', '{}');
+----
+JSONata evaluation error
+
+# Type errors in evaluation
+statement error
+SELECT jsonata('a + 1', '{"a": "x"}');
+----
+JSONata evaluation error
+
+# ============================================
+# Regular expressions (RE2)
+# ============================================
+
+query I
+SELECT jsonata('$replace("hello world", /(\w+) (\w+)/, "$2 $1")', '{}');
+----
+"world hello"
+
+query I
+SELECT jsonata('$split("a1b22c", /[0-9]+/)', '{}');
+----
+["a","b","c"]
+
+query I
+SELECT jsonata('$match("aXbx", /x/i).index', '{}');
+----
+[1,3]
+
+query I
+SELECT jsonata('$contains(s, /^b$/m)', json_object('s', 'a' || chr(10) || 'b'));
+----
+true
+
+query I
+SELECT jsonata('$contains(s, /^b$/)', json_object('s', 'a' || chr(10) || 'b'));
+----
+false
+
+query I
+SELECT jsonata('$match("ünïcödé", /[ïö]/).match', '{}');
+----
+["ï","ö"]
+
+# A long subject string used to overflow std::regex's recursive matcher
+query I
+SELECT jsonata('$match(s, /(a|b)*c/)', json_object('s', repeat('ab', 50000)));
+----
+null
+
+# Catastrophic backtracking patterns run in linear time
+query I
+SELECT jsonata('$contains(s, /(a+)+b/)', json_object('s', repeat('a', 100000)));
+----
+false
+
+# Lookaround and backreferences are not supported by RE2
+statement error
+SELECT jsonata('$contains("foo", /f(?=o)/)', '{}');
+----
+invalid regular expression
+
+query I
+SELECT jsonata_validate('$contains("foo", /f(?=o)/)');
+----
+false
