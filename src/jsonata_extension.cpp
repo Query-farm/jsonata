@@ -20,6 +20,7 @@
 #include "query_farm_telemetry.hpp"
 #include "re2/re2.h"
 
+#include <cctype>
 #include <chrono>
 #include <cstring>
 #include <list>
