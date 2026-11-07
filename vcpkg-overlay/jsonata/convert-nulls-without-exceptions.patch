@@ -1,0 +1,60 @@
+diff --git a/src/jsonata/Utils.cpp b/src/jsonata/Utils.cpp
+index af969c3..2f5b047 100644
+--- a/src/jsonata/Utils.cpp
++++ b/src/jsonata/Utils.cpp
+@@ -399,34 +399,33 @@ std::any Utils::convertNulls(const std::any& res) {
+ }
+ 
+ void Utils::convertNullsMap(std::any& res) {
+-    try {
+-        auto& map =
+-            std::any_cast<nlohmann::ordered_map<std::string, std::any>&>(res);
+-        for (auto it = map.begin(); it != map.end(); ++it) {
+-            std::any& valRef = it->second;
+-            std::any converted = convertValue(valRef);
+-            if (converted.type() != valRef.type()) {
+-                valRef = converted;
+-            }
+-            recurse(valRef);
++    // Pointer any_cast: a type check without throwing (and unwinding) for
++    // every value that is not a map
++    auto* map = std::any_cast<nlohmann::ordered_map<std::string, std::any>>(&res);
++    if (!map) {
++        return;  // Not a map, ignore
++    }
++    for (auto it = map->begin(); it != map->end(); ++it) {
++        std::any& valRef = it->second;
++        std::any converted = convertValue(valRef);
++        if (converted.type() != valRef.type()) {
++            valRef = converted;
+         }
+-    } catch (const std::bad_any_cast&) {
+-        // Not a map, ignore
++        recurse(valRef);
+     }
+ }
+ 
+ void Utils::convertNullsList(std::any& res) {
+-    try {
+-        auto& jlist = std::any_cast<JList&>(res);
+-        for (auto& item : jlist) {
+-            std::any converted = convertValue(item);
+-            if (converted.type() != item.type()) {
+-                item = converted;
+-            }
+-            recurse(item);
++    auto* jlist = std::any_cast<JList>(&res);
++    if (!jlist) {
++        return;  // Not a JList, ignore
++    }
++    for (auto& item : *jlist) {
++        std::any converted = convertValue(item);
++        if (converted.type() != item.type()) {
++            item = converted;
+         }
+-    } catch (const std::bad_any_cast&) {
+-        // Not a JList, ignore
++        recurse(item);
+     }
+ }
+ 
